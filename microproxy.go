@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/base64"
+	"net/url"
+
 	"github.com/elazarl/goproxy"
 
 	"flag"
@@ -16,7 +19,42 @@ import (
 	"syscall"
 	"time"
 )
+// Elia added 21/1/2020 from https://github.com/elazarl/goproxy/blob/master/examples/cascadeproxy/main.go
+const (
+	ProxyAuthHeader = "Proxy-Authorization"
+)
 
+func SetBasicAuth(username, password string, req *http.Request) {
+	req.Header.Set(ProxyAuthHeader, fmt.Sprintf("Basic %s", basicAuth2(username, password)))
+}
+
+func basicAuth2(username, password string) string {
+	return base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+}
+
+func GetBasicAuth(req *http.Request) (username, password string, ok bool) {
+	auth := req.Header.Get(ProxyAuthHeader)
+	if auth == "" {
+		return
+	}
+
+	const prefix = "Basic "
+	if !strings.HasPrefix(auth, prefix) {
+		return
+	}
+	c, err := base64.StdEncoding.DecodeString(auth[len(prefix):])
+	if err != nil {
+		return
+	}
+	cs := string(c)
+	s := strings.IndexByte(cs, ':')
+	if s < 0 {
+		return
+	}
+	return cs[:s], cs[s+1:], true
+}
+
+// end elia added
 // Digest auth. operation type
 const (
 	validateUser int = iota
@@ -334,7 +372,7 @@ func setActivityLog(conf *configuration, proxy *goproxy.ProxyHttpServer) {
 
 func setSignalHandler(conf *configuration, proxy *goproxy.ProxyHttpServer, logger *proxyLogger) {
 	signalChannel := make(chan os.Signal)
-	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM, syscall.SIGUSR1)
+	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
 
 	signalHandler := func() {
 		for sig := range signalChannel {
@@ -346,12 +384,6 @@ func setSignalHandler(conf *configuration, proxy *goproxy.ProxyHttpServer, logge
 					log.Printf("Close error: %v", err)
 				}
 				os.Exit(0)
-			case syscall.SIGUSR1:
-				proxy.Logger.Println("got USR1 signal, reopening logs")
-				// reopen access log
-				logger.reopen()
-				// reopen activity log
-				setActivityLog(conf, proxy)
 			}
 		}
 	}
@@ -434,6 +466,27 @@ func main() {
 	// To be called first while processing handlers' stack,
 	// has to be placed last in the source code.
 	setAuthenticationHandler(conf, proxy, logger)
+
+	// elia added
+	
+	proxy.Tr.Proxy = func(req *http.Request) (*url.URL, error) {
+	//	return url.Parse("http://localhost:8082")
+	  return url.Parse(conf.DestiProxy)
+	}
+	connectReqHandler := func(req *http.Request) {
+		//SetBasicAuth(username, password, req)
+		SetBasicAuth(conf.DestiUser, conf.DestiPass, req)
+	}
+	//proxy.ConnectDial = proxy.NewConnectDialToProxyWithHandler("http://localhost:8082", connectReqHandler)
+	proxy.ConnectDial = proxy.NewConnectDialToProxyWithHandler(conf.DestiProxy, connectReqHandler)
+	proxy.OnRequest().Do(goproxy.FuncReqHandler(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		//SetBasicAuth(username, password, req)
+		SetBasicAuth(conf.DestiUser, conf.DestiPass, req)
+		return req, nil
+	}))
+	//log.Println("serving middle proxy server at localhost:8081")
+	//go http.ListenAndServe("localhost:8081", proxy)
+	// elia end
 
 	proxy.Logger.Println("starting proxy")
 
