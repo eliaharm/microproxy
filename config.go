@@ -20,6 +20,10 @@ type configuration struct {
 	AuthType            string     `toml:"auth_type"`
 	AuthFile            string     `toml:"auth_file"`
 	ForwardedForHeader  string     `toml:"forwarded_for_header"`
+	ForwardedToProxy    string     `toml:"forwarded_to_proxy"`
+	DestiProxy          string     `toml:"desti_proxy"`
+	DestiUser           string     `toml:"desti_user"`
+	DestiPass           string     `toml:"desti_pass"`
 	BindIP              string     `toml:"bind_ip"`
 	ViaHeader           string     `toml:"via_header"`
 	ViaProxyName        string     `toml:"via_proxy_name"`
